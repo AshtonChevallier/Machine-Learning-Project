@@ -1,0 +1,67 @@
+---
+title: "Machine Learning - Fit Bit Analysis"
+author: "Ashton Chevallier"
+date: "Monday, May 18, 2015"
+output: html_document
+---
+
+We'll be looking at fit bit data and trying to predict on whether people are actually doing excercises correctly. According to the literature in the site the definition of the "classe" variable is:
+
+"Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+
+Read more: http://groupware.les.inf.puc-rio.br/har#ixzz3aZ2sqolq"
+
+Here's our code for loading and splitting the data into an additional training and testing data.
+```{r dataload}
+  if(!file.exists("training.csv")){
+        download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+                      ,destfile = "training.csv")
+    }
+  if(!file.exists("testing.csv")){
+        download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+                      ,destfile = "testing.csv")
+    }
+library(ggplot2)
+library(caret)  
+
+trainingraw <- read.csv("training.csv")
+validation <- read.csv("testing.csv")
+set.seed(1234)
+index <- createDataPartition(y=trainingraw$X,p=.8,list=FALSE)
+training <- trainingraw[index,]
+testing <- trainingraw[-index,]
+
+```
+The class definitions give us some clues to predicting the bad habits. Let's start plotting some variables to see if we can see some patterns.
+
+```{r plot }
+qplot(data=training,roll_dumbbell,pitch_dumbbell,color=classe,facets=user_name~.,main='Roll vs. Pitch Dumbell')
+qplot(data=training,roll_arm,pitch_arm,color=classe,facets=user_name~.,main='Roll vs. Pitch Arm')
+qplot(data=training,roll_belt,pitch_belt,color=classe,facets=user_name~.,main='Roll vs. Pitch Belt')
+```
+
+These sorts of patterns seem to indicate the each of the 6 people have distinct styles of lifting. This could cause potential issues creating false positives. However, the acceleromter data does seem to show patterns that distinguish the different classes of lifting types. For instance in the belt pitch vs. roll diagram, all 6 users showed a wide spread on the belt data for the E class, denoting poor belt form; ie "throwing the hips to the front".
+
+Because the nature of these problems, a decision tree would probably end up getting confused. A random forest algorithm might work out better. To avoid potential issues and conflation with users and time stamps, we are going to filter out all the non-sesnor data first.
+
+```{r rf ,cache=TRUE}
+predictors <- subset(x=training,select=c(roll_belt,pitch_belt,yaw_belt,total_accel_belt,roll_arm,pitch_arm,yaw_arm,total_accel_arm,pitch_dumbbell,roll_dumbbell,yaw_dumbbell,total_accel_dumbbell))
+
+testpredictors <- subset(x=testing,select=c(roll_belt,pitch_belt,yaw_belt,total_accel_belt,roll_arm,pitch_arm,yaw_arm,total_accel_arm,pitch_dumbbell,roll_dumbbell,yaw_dumbbell,total_accel_dumbbell))
+
+validationpredictors <- subset(x=validation,select=c(roll_belt,pitch_belt,yaw_belt,total_accel_belt,roll_arm,pitch_arm,yaw_arm,total_accel_arm,pitch_dumbbell,roll_dumbbell,yaw_dumbbell,total_accel_dumbbell))
+
+RFmodel <- train(x=predictors,y=training$classe,method='rf')
+RF1 <- predict(RFmodel,newdata=predictors)
+RF2 <- predict(RFmodel,newdata=testpredictors)
+RF3 <- predict(RFmodel,newdata=validationpredictors)
+
+confusionMatrix(RF1,training$classe)
+confusionMatrix(RF2,testing$classe)
+```
+
+The model seems to be almost too accurate on the original testing set, giving 100% prediction rate. But, when cross validated against the split training set; it remains very accurate at predicting the class type across the different users. Since we did little transforming, outside of limiting our training set, I feel confident we have no over fitting of the model.
+
+```{r output}
+RF3
+```
